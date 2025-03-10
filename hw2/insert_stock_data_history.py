@@ -147,14 +147,9 @@ def daily_crawler(date):
 
     conn.close()
 
-# 讓 Schedular 在設定的時間可以正常關閉
-def end_program():
-    print("Program ends.")
-    scheduler.shutdown(wait=False)  # 直接關閉 Scheduler
-
 # 呼叫爬蟲
 for i in range(2022, 2026):
-    for j in range(1, 12):
+    for j in range(12, 13):
         if j < 10:
             j = "0" + str(j)
 
