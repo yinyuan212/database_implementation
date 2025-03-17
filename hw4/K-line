@@ -1,0 +1,66 @@
+import pyodbc
+import pandas as pd
+import mplfinance as mpf
+
+# 設定資料庫連線
+db_settings = {
+    "host": "localhost,1433",
+    "user": "student",
+    "password": "student",
+    "database": "stock_database",
+    "driver": "ODBC Driver 17 for SQL Server"
+}
+
+conn = pyodbc.connect(**db_settings)
+
+# SQL 查詢語法，選取 2330 在 2024 年的交易數據
+query = """
+SELECT [Date]
+      ,[Open]
+      ,[High]
+      ,[Low]
+      ,[Close]
+      ,[Volume]
+  FROM [stock_database].[dbo].[StockTrading_TA]
+  WHERE StockCode = 2330 AND YEAR(date) = 2024
+ORDER BY date
+"""
+
+# 讀取數據進入 pandas DataFrame
+df = pd.read_sql(query, conn)
+
+# 關閉資料庫連線
+conn.close()
+
+
+# 轉換 date 欄位為 datetime 類型，並設定為索引
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index('Date', inplace=True)
+
+# 繪製 K 線蠟燭圖，設定顏色（上漲紅色 r，下跌綠色 g）
+
+# 設定K線圖樣式
+mc = mpf.make_marketcolors(
+    up='r',       # 上漲紅色
+    down='g',     # 下跌綠色
+    edge='inherit',
+    wick='inherit',
+    volume='inherit'
+)
+
+# 設定整體圖表樣式
+s = mpf.make_mpf_style(
+    marketcolors=mc,
+    gridstyle='--',
+    y_on_right=False
+)
+
+# 繪製K線圖
+mpf.plot(
+    df,
+    type='candle',
+    title='2330',
+    volume=True,
+    style=s,
+    datetime_format='%Y-%m-%d'  # 日期格式
+)
