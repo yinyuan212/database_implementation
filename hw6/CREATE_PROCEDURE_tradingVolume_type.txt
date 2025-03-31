@@ -1,0 +1,75 @@
+CREATE PROCEDURE tradingVolume_type
+    @company_input VARCHAR(10),       -- 股票代碼
+    @setting_days INT,                -- 要比較的天數（如 20、60）
+    @setting_date DATE,               -- 指定日期
+    @type INT OUTPUT                  -- 回傳成交量類別（-2~2 或 99）
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Step 1: 檢查是否為交易日
+    DECLARE @is_workingday INT;
+    SELECT @is_workingday = day_of_stock 
+    FROM calendar
+    WHERE [date] = @setting_date;
+
+    IF (@is_workingday IS NULL OR @is_workingday = -1)
+    BEGIN
+        PRINT '日期 ' + CAST(@setting_date AS VARCHAR) + ' 不是交易日，回傳 99';
+        SET @type = 99;
+        RETURN;
+    END
+
+    -- Step 2: 取得分類門檻
+    DECLARE @veryHigh_def FLOAT, @high_def FLOAT, @low_def FLOAT, @veryLow_def FLOAT;
+
+    SELECT
+        @veryHigh_def = veryHigh_volume,
+        @high_def = high_volume,
+        @low_def = low_volume,
+        @veryLow_def = veryLow_volume
+    FROM tradingVolume_def
+    WHERE compare_with = @setting_days;
+
+    -- Step 3: 建立暫存表，儲存指定日期往前N天的資料
+    IF OBJECT_ID('tempdb..#stock_temp') IS NOT NULL DROP TABLE #stock_temp;
+
+    CREATE TABLE #stock_temp (
+        company_temp VARCHAR(10),
+        date_temp DATE,
+        tv_temp FLOAT
+    );
+
+    DECLARE @sqltext NVARCHAR(MAX);
+    SET @sqltext = N'
+        INSERT INTO #stock_temp (company_temp, date_temp, tv_temp)
+        SELECT TOP(' + CAST(@setting_days AS VARCHAR) + N')
+            StockCode, [date], volume
+        FROM StockTrading_TA
+        WHERE StockCode = ''' + @company_input + N'''
+        AND [date] <= ''' + CAST(@setting_date AS VARCHAR) + N'''
+        ORDER BY [date] DESC;';
+
+    EXEC sp_executesql @sqltext;
+
+    -- Step 4: 對 volume 排名
+    DECLARE @temp INT;
+    SELECT @temp = ROWID
+    FROM (
+        SELECT ROW_NUMBER() OVER (ORDER BY tv_temp DESC) AS ROWID, date_temp
+        FROM #stock_temp
+    ) T1
+    WHERE T1.date_temp = @setting_date;
+
+    -- Step 5: 比對分類條件
+    IF @temp <= @setting_days * @veryHigh_def
+        SET @type = 2;   -- 極大量
+    ELSE IF @temp <= @setting_days * @high_def
+        SET @type = 1;   -- 大量
+    ELSE IF @temp >= @setting_days - (@setting_days * @veryLow_def)
+        SET @type = -2;  -- 極小量
+    ELSE IF @temp >= @setting_days - (@setting_days * @low_def)
+        SET @type = -1;  -- 小量
+    ELSE
+        SET @type = 0;   -- 普通
+END
